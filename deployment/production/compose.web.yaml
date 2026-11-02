@@ -19,7 +19,7 @@ services:
     security_opt:
       - no-new-privileges:true
   panel:
-    image: node:22-bookworm-slim
+    image: node:24.19.0-bookworm-slim
     container_name: consulting-panel
     working_dir: /app
     command: ["node", "server/index.mjs"]
