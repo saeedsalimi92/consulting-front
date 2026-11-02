@@ -1,0 +1,38 @@
+name: consulting-web
+services:
+  front:
+    image: node:24.19.0-bookworm-slim
+    container_name: consulting-front
+    working_dir: /app
+    command: ["node", "server/index.mjs"]
+    volumes:
+      - ./front/current:/app:ro
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE:?Set API URL}
+    ports:
+      - "127.0.0.1:3100:3000"
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
+  panel:
+    image: node:22-bookworm-slim
+    container_name: consulting-panel
+    working_dir: /app
+    command: ["node", "server/index.mjs"]
+    volumes:
+      - ./panel/current:/app:ro
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE:?Set API URL}
+    ports:
+      - "127.0.0.1:3200:3000"
+    restart: unless-stopped
+    init: true
+    security_opt:
+      - no-new-privileges:true
