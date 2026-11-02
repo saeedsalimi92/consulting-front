@@ -98,11 +98,11 @@ jobs:
           PREV="$(readlink "$BASE/current" || true)"
           ln -sfn "$NEW" "$BASE/current.next"
           mv -Tf "$BASE/current.next" "$BASE/current"
-          if ! cd /var/www/consulting && docker compose --env-file /etc/consulting/web.env -f compose.web.yaml up -d --no-deps --force-recreate front; then
+          if ! sudo -n /usr/local/sbin/consulting-web-deploy front; then
             if [ -n "$PREV" ]; then
               ln -sfn "$PREV" "$BASE/current.next"
               mv -Tf "$BASE/current.next" "$BASE/current"
-              cd /var/www/consulting && docker compose --env-file /etc/consulting/web.env -f compose.web.yaml up -d --no-deps --force-recreate front || true
+              sudo -n /usr/local/sbin/consulting-web-deploy front || true
             fi
             exit 1
           fi
@@ -116,7 +116,7 @@ jobs:
             if [ -n "$PREV" ]; then
               ln -sfn "$PREV" "$BASE/current.next"
               mv -Tf "$BASE/current.next" "$BASE/current"
-              cd /var/www/consulting && docker compose --env-file /etc/consulting/web.env -f compose.web.yaml up -d --no-deps --force-recreate front || true
+              sudo -n /usr/local/sbin/consulting-web-deploy front || true
             fi
             exit 1
           fi
