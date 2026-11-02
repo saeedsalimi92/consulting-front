@@ -19,20 +19,13 @@ services:
     security_opt:
       - no-new-privileges:true
   panel:
-    image: node:24.19.0-bookworm-slim
+    image: nginx:1.27-alpine
     container_name: consulting-panel
-    working_dir: /app
-    command: ["node", "server/index.mjs"]
     volumes:
-      - ./panel/current:/app:ro
-    environment:
-      NODE_ENV: production
-      HOST: 0.0.0.0
-      PORT: "3000"
-      NUXT_PUBLIC_API_BASE: ${NUXT_PUBLIC_API_BASE:?Set API URL}
+      - ./panel/current/build:/usr/share/nginx/html:ro
+      - ./panel/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     ports:
-      - "127.0.0.1:3200:3000"
+      - "127.0.0.1:3200:80"
     restart: unless-stopped
-    init: true
     security_opt:
       - no-new-privileges:true
