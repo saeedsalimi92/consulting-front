@@ -1,0 +1,27 @@
+[Unit]
+Description=Consulting Front Nuxt SSR
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=consulting-front
+Group=consulting-front
+WorkingDirectory=/var/www/consulting/front/current
+Environment=NODE_ENV=production
+Environment=HOST=127.0.0.1
+Environment=PORT=3100
+EnvironmentFile=-/etc/consulting/front.env
+ExecStart=/usr/bin/node /var/www/consulting/front/current/server/index.mjs
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/www/consulting/front
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
