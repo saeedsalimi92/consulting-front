@@ -1,0 +1,12 @@
+export type Client = { id:number; name:string; first_name?:string|null; last_name?:string|null; email:string|null; phone:string|null; phone_verified_at?:string|null; mobile_verified?:boolean; has_password?:boolean; profile_complete?:boolean; missing_profile_fields?:string[]; birth_date?:string|null; address?:string|null }
+export type BookingService = { id:number; title:string; duration_minutes:number; price_irr:number; deposit_irr:number; is_active:boolean }
+export type BookingSlot = { starts_at:string; ends_at:string; available:boolean }
+export type Booking = { id:number; counselor_id:number; booking_service_id:number; mode:'online'|'in_person'; session_mode?:'in_person'|'meet'|'voice_call'; starts_at:string; ends_at:string; status:string; payment_option:'full'|'deposit'; total_irr:number; base_price_irr?:number; discount_irr?:number; tax_irr?:number; required_irr:number; paid_irr:number; remaining_irr:number; hold_expires_at:string|null; connection_available_at?:string; connection_available?:boolean; session_connection?:string|null; session_instructions?:string|null }
+export type BookingPayment = { id:number; provider:string; status:string; amount_irr:number; payment_method?:string|null; provider_reference?:string|null; verified_at?:string|null; created_at:string }
+export type BookingReceipt = { id:number; receipt_number:string; amount_irr:number; paid_at?:string; created_at?:string; payment_id:number; discount_irr?:number; tax_irr?:number; provider?:string; provider_reference?:string }
+export type FakeCheckout = { payment_id:number; booking_id:number; booking_reference:string; service_name:string; amount_irr:number; provider:string; label:string }
+export type FakePaymentResult = { payment_id:number; booking_id:number; status:string; booking_status?:string; receipt?:string|null }
+export type ClientNotification = {id:number;booking_id:number|null;title:string;body:string;read_at:string|null;created_at:string;event_key?:string;payload?:Record<string,unknown>|null}
+export type BookingNote = { id:number; body:string; created_at:string }
+export type CancellationRequest = { id:number; status:string; refund_amount_irr:number; penalty_irr:number }
+export type ApiError = { statusCode?:number; status?:number; data?:{message?:string; errors?:Record<string,string[]>} }

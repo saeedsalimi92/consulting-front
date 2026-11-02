@@ -1,0 +1,19 @@
+<script setup lang="ts">
+import type {Booking,BookingPayment,BookingReceipt} from '~/types/booking'
+const route=useRoute(),api=useBookingApi(),auth=useClientAuth(),toast=useAppToast(),{path,t,money,formatDate}=useSiteLocale()
+const paymentId=Number(route.query.payment_id),callbackHint=String(route.query.status||''),booking=ref<Booking|null>(null),payment=ref<BookingPayment|null>(null),receipt=ref<BookingReceipt|null>(null),loading=ref(true),error=ref(''),retrying=ref(false)
+const paymentNoticeShown=ref(false)
+useSeoMeta({title:'نتیجه پرداخت',robots:'noindex,nofollow'})
+const outcome=computed(()=>payment.value?.status==='verified'?'success':payment.value?.status==='failed'?'failed':'pending')
+async function loadResult(){loading.value=true;error.value='';try{auth.restore();if(!auth.token.value){await navigateTo({path:path('/account/login'),query:{redirect:route.fullPath}});return}if(!Number.isSafeInteger(paymentId)||paymentId<1)throw new Error('شناسه پرداخت در نشانی بازگشت معتبر نیست.')
+ let page=1,last=1,found:{booking:Booking;payment:BookingPayment}|undefined
+ do{const result=await api.mine(page);last=result.last_page||1;for(const item of result.data||[]){const attempts=await api.payments(item.id);const match=(attempts.data||[]).find(row=>row.id===paymentId);if(match){found={booking:(await api.booking(item.id)).data,payment:match};break}}page++}while(!found&&page<=last&&page<=100)
+ if(!found)throw new Error('وضعیت این پرداخت در نوبت‌های حساب شما پیدا نشد. از بخش نوبت‌ها وضعیت را بررسی کنید.')
+ booking.value=found.booking;payment.value=found.payment
+ if(found.payment.status==='verified'&&!paymentNoticeShown.value){toast.success('پرداخت با موفقیت تأیید شد.');paymentNoticeShown.value=true}
+ if(found.payment.status==='verified'){const receipts=await api.receipts(found.booking.id);receipt.value=(receipts.data||[]).find(item=>item.payment_id===paymentId)||null}
+ }catch(e){error.value=bookingMessage(e,t)}finally{loading.value=false}}
+async function retry(){if(retrying.value||!booking.value)return;retrying.value=true;try{await loadResult()}finally{retrying.value=false}}
+onMounted(loadResult)
+</script>
+<template><section class="container section"><div class="test-bank"><h1>نتیجه پرداخت</h1><p v-if="loading">در حال دریافت وضعیت پرداخت از سامانه…</p><ApiNotice v-if="error">{{error}}</ApiNotice><template v-if="!loading&&payment&&booking"><div v-if="outcome==='success'" class="notice"><h2>پرداخت توسط سامانه تأیید شد</h2><p>وضعیت نوبت از اطلاعات ذخیره‌شده در سامانه دریافت شده است.</p></div><div v-else-if="outcome==='failed'" class="notice"><h2>پرداخت ناموفق بود</h2><p>پرداخت تکمیل نشد. می‌توانید وضعیت نوبت را بازبینی کنید و در صورت فعال بودن، دوباره اقدام کنید.</p></div><div v-else class="notice"><h2>تأیید پرداخت در انتظار پاسخ است</h2><p>بازگشت مرورگر به‌تنهایی پرداخت را تأیید نمی‌کند. وضعیت را دوباره از سامانه دریافت کنید.</p></div><div class="receipt-row"><span>شماره پرداخت</span><strong>{{payment.id}}</strong></div><div class="receipt-row"><span>مبلغ</span><strong>{{money(payment.amount_irr)}}</strong></div><div class="receipt-row"><span>وضعیت پرداخت</span><strong>{{t(payment.status as any)||payment.status}}</strong></div><div class="receipt-row"><span>وضعیت نوبت</span><strong>{{t(booking.status as any)||booking.status}}</strong></div><div v-if="receipt" class="receipt-row"><span>شماره رسید</span><strong>{{receipt.receipt_number}}</strong></div><p class="muted">{{formatDate(payment.created_at)}}</p><div class="actions"><NuxtLink class="btn" :to="path(`/account/appointments/${booking.id}`)">مشاهده نوبت</NuxtLink><button class="btn secondary" type="button" :disabled="retrying" @click="retry">تازه‌سازی وضعیت</button></div></template><p v-if="!loading&&!payment&&!error" class="muted">{{callbackHint?'وضعیت برگشت مرورگر دریافت شد؛ نتیجه فقط با پاسخ API تعیین می‌شود.':'نتیجه پرداخت در حال بررسی است.'}}</p></div></section></template>

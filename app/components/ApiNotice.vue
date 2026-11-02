@@ -1,0 +1,1 @@
+<template><div class="notice" role="status"><slot /></div></template>

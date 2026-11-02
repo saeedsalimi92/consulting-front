@@ -1,0 +1,179 @@
+--- a/app/Http/Controllers/Booking/ClientAuthController.php
++++ b/app/Http/Controllers/Booking/ClientAuthController.php
+@@ -16,22 +16,162 @@
+         throw AuthFlowException::make(410,'OTP_REGISTRATION_REQUIRED','برای ساخت حساب، شماره موبایل خود را با کد پیامکی تأیید کنید.');
+     }
+     public function login(Request $r, OtpAuthentication $otp, ProfileCompleteness $profiles) {
+-        $v=$r->validate(['email'=>'required|string|max:255','password'=>'required|string']);
++        $diagnosticId=(string) \Illuminate\Support\Str::uuid();
++        $rawIdentifier=$r->input('email');
++        $this->authE2eLoginDiagnostic($r,$diagnosticId,$rawIdentifier,null,null,[],null,$r->input('password'),false,null,null,'controller_entered');
++        try {
++            $v=$r->validate(['email'=>'required|string|max:255','password'=>'required|string']);
++        } catch (\Illuminate\Validation\ValidationException $exception) {
++            $this->authE2eLoginDiagnostic($r,$diagnosticId,$rawIdentifier,null,null,[],null,$r->input('password'),false,null,'request_validation_failed','validation_rejected');
++            throw $exception;
++        }
+         $identifier=trim($v['email']);
+         try { $canonical=IranianMobile::normalize($identifier); }
+         catch (InvalidArgumentException) { $canonical=null; }
+         $key='client-login:'.sha1(strtolower($canonical ?? $identifier).'|'.$r->ip());
+-        if(RateLimiter::tooManyAttempts($key,5)) throw ValidationException::withMessages(['email'=>'Too many attempts']);
++        if(RateLimiter::tooManyAttempts($key,5)) {
++            $this->authE2eLoginDiagnostic($r,$diagnosticId,$rawIdentifier,$identifier,$canonical,[],null,$v['password'],true,null,'rate_limited','rate_limited');
++            throw ValidationException::withMessages(['email'=>'Too many attempts']);
++        }
+         $matches=$canonical ? $otp->usersForMobile($canonical) : [];
+         $user=$canonical ? (count($matches)===1?$matches[0]:null) : User::where('email',$identifier)->first();
+-        if(!$user || !(bool)($user->is_active??true) || !filled($user->password) || !Hash::check($v['password'],$user->password) || !$user->canAccessClientPortal()) {
++        $failureCondition=null;
++        if(!$user) $failureCondition='user_not_found_or_ambiguous';
++        elseif(!(bool)($user->is_active??true)) $failureCondition='inactive_account';
++        elseif(!filled($user->password)) $failureCondition='empty_password';
++        elseif(!Hash::check($v['password'],$user->password)) $failureCondition='password_mismatch';
++        elseif(!$user->canAccessClientPortal()) $failureCondition='client_portal_forbidden';
++        if($failureCondition!==null) {
++            $this->authE2eLoginDiagnostic($r,$diagnosticId,$rawIdentifier,$identifier,$canonical,$matches,$user,$v['password'],false,true,$failureCondition,'authentication_rejected');
+             RateLimiter::hit($key,60);
+             throw ValidationException::withMessages(['email'=>'Invalid credentials']);
+         }
++        $this->authE2eLoginDiagnostic($r,$diagnosticId,$rawIdentifier,$identifier,$canonical,$matches,$user,$v['password'],false,false,null,'authenticated');
+         RateLimiter::clear($key);
+         return response()->json(['data'=>$otp->present($user),
+             'token'=>$user->createToken('client',['client'])->plainTextToken]+$profiles->for($user));
+     }
++    /** Test-only structured diagnostics for the isolated HTTP integration process. */
++    private function authE2eLoginDiagnostic(Request $request, string $correlationId, mixed $rawIdentifier, mixed $identifier, ?string $canonical, array $matches, ?User $user, mixed $password, bool $rateLimited, ?bool $rejectionCondition, ?string $failureCondition, string $stage): void
++    {
++        // Never write diagnostics outside the isolated Laravel testing runtime.
++        if (!app()->environment('testing')) return;
++        $runId=(string)getenv('AUTH_E2E_RUN_ID');
++        if (!preg_match('/^[a-f0-9]{24}$/',$runId)) return;
++        $default=(string)config('database.default');
++        $configured=(array)config('database.connections.'.$default,[]);
++        $dbConfigGate=$default==='mysql' && ($configured['driver']??null)==='mysql'
++            && ($configured['host']??null)==='mysql-test'
++            && ($configured['database']??null)==='consulting_booking_test_20261012';
++        $connection=null;
++        $actual=null;
++        $actualGate=false;
++        $outOfBand=static function(array $data) use($runId): bool {
++            $path=sys_get_temp_dir().'/auth-e2e-login-diagnostics-'.$runId.'.out-of-band.jsonl';
++            $line=json_encode($data,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES).PHP_EOL;
++            return @file_put_contents($path,$line,FILE_APPEND|LOCK_EX)!==false;
++        };
++        if ($dbConfigGate) {
++            try {
++                $connection=\Illuminate\Support\Facades\DB::connection($default);
++                $actual=$connection->selectOne('SELECT DATABASE() AS database_name')->database_name ?? null;
++                $actualGate=$connection->getDriverName()==='mysql'
++                    && $connection->getConfig('host')==='mysql-test'
++                    && $actual==='consulting_booking_test_20261012';
++            } catch (\Throwable $exception) {
++                $outOfBand(['stage'=>'diagnostic_database_gate_failed','correlation_id'=>$correlationId,'test_run_id'=>$runId,'error_type'=>get_class($exception),'gates'=>['app_testing'=>true,'diagnostic_flag'=>getenv('AUTH_E2E_LOGIN_DIAGNOSTICS')==='1','request_run_id_present'=>$request->header('X-Auth-E2E-Run-Id')!==null,'request_run_id_matches_process'=>hash_equals($runId,(string)$request->header('X-Auth-E2E-Run-Id','')),'database_config_identity'=>true,'actual_database_identity'=>false]]);
++                return;
++            }
++        }
++        // If runtime identity diverges, write only to the container's /tmp. Never query or write to an unapproved DB.
++        if (!$dbConfigGate || !$actualGate) {
++            $outOfBand(['stage'=>'diagnostic_gate_rejected','correlation_id'=>$correlationId,'test_run_id'=>$runId,'gates'=>['app_testing'=>true,'diagnostic_flag'=>getenv('AUTH_E2E_LOGIN_DIAGNOSTICS')==='1','request_run_id_present'=>$request->header('X-Auth-E2E-Run-Id')!==null,'request_run_id_matches_process'=>hash_equals($runId,(string)$request->header('X-Auth-E2E-Run-Id','')),'database_config_identity'=>$dbConfigGate,'actual_database_identity'=>$actualGate],'database'=>['connection'=>$default,'driver'=>$connection?$connection->getDriverName():($configured['driver']??null),'host'=>$connection?$connection->getConfig('host'):($configured['host']??null),'configured_database'=>$configured['database']??null,'actual_database'=>$actual,'actual_database_check_attempted'=>$dbConfigGate]]);
++            return;
++        }
++        try {
++            $headerRunId=(string)$request->header('X-Auth-E2E-Run-Id','');
++            $diagnosticFlag=getenv('AUTH_E2E_LOGIN_DIAGNOSTICS')==='1';
++            $gates=[
++                'app_testing'=>app()->environment('testing'),
++                'diagnostic_flag'=>$diagnosticFlag,
++                'process_run_id_valid'=>true,
++                'request_run_id_present'=>$headerRunId!=='',
++                'request_run_id_matches_process'=>hash_equals($runId,$headerRunId),
++                'database_config_identity'=>$dbConfigGate,
++                'actual_database_identity'=>$actualGate,
++            ];
++            $path=storage_path('logs/auth-e2e-login-diagnostics-'.$runId.'.jsonl');
++            if (!$diagnosticFlag) {
++                $disabled=[
++                    'stage'=>'diagnostics_disabled',
++                    'diagnostic_file'=>$path,
++                    'correlation_id'=>$correlationId,
++                    'test_run_id'=>$runId,
++                    'controller'=>self::class,
++                    'action'=>'login',
++                    'gates'=>$gates,
++                    'database'=>['connection'=>$default,'driver'=>$connection->getDriverName(),'host'=>$connection->getConfig('host'),'configured_database'=>$configured['database']??null,'actual_database'=>$actual],
++                ];
++                $line=json_encode($disabled,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES).PHP_EOL;
++                if (file_put_contents($path,$line,FILE_APPEND|LOCK_EX)===false) throw new \RuntimeException('diagnostic writer failed');
++                return;
++            }
++
++            $fixture=User::query()->where('email','auth-e2e-'.$runId.'@example.test')->first(['id','phone']);
++            $fixtureMobile=null;
++            if ($fixture && filled($fixture->phone)) {
++                try { $fixtureMobile=IranianMobile::normalize((string)$fixture->phone); }
++                catch (InvalidArgumentException) { $fixtureMobile=null; }
++            }
++            $matchedUser=$user;
++            if (!$matchedUser && count($matches)===1) $matchedUser=$matches[0];
++            $isFixture=$matchedUser!==null && $fixture!==null && (int)$matchedUser->getKey()===(int)$fixture->getKey();
++            $trimmed=is_string($identifier)?$identifier:(is_string($rawIdentifier)?trim($rawIdentifier):'');
++            $rawText=is_string($rawIdentifier)?$rawIdentifier:'';
++            $data=[
++                'stage'=>$stage,
++                'diagnostic_file'=>$path,
++                'correlation_id'=>$correlationId,
++                'test_run_id'=>$runId,
++                'controller'=>self::class,
++                'action'=>'login',
++                'gates'=>$gates,
++                'diagnostics_active'=>true,
++                'app_environment'=>app()->environment(),
++                'configuration_cached'=>app()->configurationIsCached(),
++                'php_sapi'=>PHP_SAPI,
++                'php_version'=>PHP_VERSION,
++                'opcache_enabled'=>(bool)ini_get('opcache.enable'),
++                'controller_source_sha256'=>is_file(__FILE__)?hash_file('sha256',__FILE__):null,
++                'database'=>['connection'=>$default,'driver'=>$connection->getDriverName(),'host'=>$connection->getConfig('host'),'configured_database'=>$configured['database']??null,'actual_database'=>$actual],
++                'request'=>[
++                    'email_present'=>$request->exists('email'),
++                    'password_present'=>$request->exists('password'),
++                    'email_type'=>get_debug_type($rawIdentifier),
++                    'password_type'=>get_debug_type($request->input('password')),
++                    'identifier_empty'=>$trimmed==='',
++                    'trim_changed_length'=>strlen($rawText)!==strlen($trimmed),
++                    'mobile_normalization_succeeded'=>$canonical!==null,
++                    'normalized_mobile_matches_fixture_mobile'=>$fixtureMobile!==null && $canonical!==null && hash_equals($fixtureMobile,$canonical),
++                ],
++                'lookup'=>['matching_user_count'=>count($matches),'matched_user_is_fixture'=>$isFixture],
++                'account'=>[
++                    'active'=>$matchedUser?(bool)($matchedUser->is_active??true):null,
++                    'stored_password_nonempty'=>$matchedUser?filled($matchedUser->password):false,
++                    'password_check'=>$matchedUser&&filled($matchedUser->password)&&is_string($password)?Hash::check($password,(string)$matchedUser->password):false,
++                    'can_access_admin'=>$matchedUser?$matchedUser->canAccessAdmin():null,
++                    'is_counselor_account'=>$matchedUser?$matchedUser->isCounselorAccount():null,
++                    'can_access_client_portal'=>$matchedUser?$matchedUser->canAccessClientPortal():null,
++                ],
++                'decision'=>['rate_limit_blocks_request'=>$rateLimited,'combined_rejection_condition'=>$rejectionCondition,'first_failing_condition'=>$failureCondition,'final_branch'=>$stage],
++            ];
++            $line=json_encode($data,JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES).PHP_EOL;
++            if (file_put_contents($path,$line,FILE_APPEND|LOCK_EX)===false) throw new \RuntimeException('diagnostic writer failed');
++        } catch (\Throwable $exception) {
++            $outOfBand(['stage'=>'controller_diagnostic_writer_failed','correlation_id'=>$correlationId,'test_run_id'=>$runId,'error_type'=>get_class($exception),'gates'=>['app_testing'=>true,'diagnostic_flag'=>getenv('AUTH_E2E_LOGIN_DIAGNOSTICS')==='1','database_config_identity'=>$dbConfigGate,'actual_database_identity'=>$actualGate]]);
++        }
++    }
++
+     public function me(Request $r, OtpAuthentication $otp) { return response()->json(['data'=>$otp->present($r->user())]); }
+     public function update(Request $r, OtpAuthentication $otp) {
+         $v=$r->validate(['name'=>'sometimes|required|string|max:255','phone'=>'sometimes|nullable|string|max:30|unique:users,phone,'.$r->user()->id,
+--- a/compose.mysql-test.yaml
++++ b/compose.mysql-test.yaml
+@@ -12,6 +12,8 @@
+       - ./:/var/www/html
+     environment:
+       APP_ENV: testing
++      AUTH_E2E_LOGIN_DIAGNOSTICS: "1"
++      AUTH_E2E_RUN_ID: "${E2E_AUTH_RUN_ID:-}"
+       APP_DEBUG: "false"
+       APP_KEY: base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+       APP_URL: http://localhost:8011

@@ -1,0 +1,28 @@
+{
+  "name": "elham-nuxt4",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev --host 0.0.0.0",
+    "build": "nuxt build",
+    "preview": "nuxt preview",
+    "typecheck": "nuxt prepare && vue-tsc --noEmit -p .nuxt/tsconfig.json",
+    "test": "node --input-type=module -e \"await import('./tests/otp-auth.test.mjs')\"",
+    "test:e2e": "playwright test",
+    "test:e2e:auth": "playwright test tests/e2e/login.spec.ts",
+    "test:e2e:smoke": "playwright test tests/e2e/smoke.spec.ts",
+    "test:e2e:integration": "bash scripts/run-auth-integration-e2e.sh"
+  },
+  "dependencies": {
+    "@pinia/nuxt": "^0.11.0",
+    "nuxt": "^4.0.0",
+    "pinia": "^3.0.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "typescript": "^5.8.0",
+    "vue-tsc": "^2.2.0"
+  }
+}

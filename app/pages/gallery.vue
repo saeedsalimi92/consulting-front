@@ -1,0 +1,12 @@
+<script setup lang="ts">
+import {collectionItems,useMediaUrl,type CmsEntry} from '~/composables/useBackend'
+useSeoMeta({title:'گالری تصاویر',description:'تصاویر ثبت‌شده در گالری مرکز مشاوره'})
+const {data,error,pending}=await useBackend().content('gallery',{per_page:24})
+const items=computed(()=>collectionItems<CmsEntry>(data.value).filter(x=>x.image))
+const mediaUrl=useMediaUrl()
+const viewer=ref<HTMLDialogElement|null>(null),activeIndex=ref(0),active=computed(()=>items.value[activeIndex.value])
+function openImage(index:number){activeIndex.value=index;viewer.value?.showModal()}
+function moveImage(delta:number){activeIndex.value=(activeIndex.value+delta+items.value.length)%items.value.length}
+function imageFailed(event:Event){const image=event.target as HTMLImageElement;image.style.display='none';image.parentElement?.querySelector('.image-fallback')?.classList.add('visible')}
+</script>
+<template><div class="container section gallery-page"><div class="section-heading"><div><span class="eyebrow">فضای مرکز</span><h1>گالری تصاویر</h1><p>تصاویر منتشرشده از فضای مرکز.</p></div></div><p v-if="pending">در حال دریافت تصاویر…</p><ApiNotice v-else-if="error">دریافت تصاویر گالری ناموفق بود.</ApiNotice><div v-else-if="items.length" class="gallery-grid"><figure v-for="(item,index) in items" :key="item.id" class="gallery-item" :class="`gallery-piece-${index+1}`"><button type="button" :aria-label="`نمایش بزرگ تصویر ${item.title||index+1}`" @click="openImage(index)"><img :src="mediaUrl(item.image)" :alt="item.title||'تصویر گالری'" loading="lazy" @error="imageFailed"/><span class="image-fallback">تصویر در دسترس نیست</span></button><figcaption v-if="item.title">{{item.title}}</figcaption></figure></div><ApiNotice v-else>تصویری برای نمایش در گالری منتشر نشده است.</ApiNotice><dialog ref="viewer" class="gallery-dialog" aria-label="نمایش تصویر" @keydown.left.prevent="moveImage(1)" @keydown.right.prevent="moveImage(-1)"><form method="dialog"><button class="gallery-close" aria-label="بستن نمایشگر">بستن</button></form><button v-if="items.length>1" class="gallery-prev" aria-label="تصویر قبلی" @click="moveImage(-1)">قبلی</button><figure v-if="active" class="gallery-stage"><img :src="mediaUrl(active.image)" :alt="active.title||'تصویر گالری'"/><figcaption v-if="active.title">{{active.title}}</figcaption></figure><button v-if="items.length>1" class="gallery-next" aria-label="تصویر بعدی" @click="moveImage(1)">بعدی</button></dialog></div></template>

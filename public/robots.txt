@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /account/
+Disallow: /fake-bank
+Disallow: /en/account/
+Disallow: /en/fake-bank
+Sitemap: /sitemap.xml

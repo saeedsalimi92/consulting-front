@@ -1,0 +1,14 @@
+{
+  "name": "مرکز مشاوره و روان‌شناسی آرامش",
+  "short_name": "آرامش",
+  "lang": "fa",
+  "dir": "rtl",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f8faf8",
+  "theme_color": "#176b52",
+  "icons": [
+    { "src": "/images/logo.png", "sizes": "any", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
